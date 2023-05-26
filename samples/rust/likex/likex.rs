@@ -1,30 +1,31 @@
 // SPDX-License-Identifier: GPL-2.0
 
 //! Rust KVM for VMX
+use core::arch::asm;
 #[allow(missing_docs)]
 use core::cfg;
 use core::ffi::c_void;
-use core::arch::asm;
 use kernel::mm::virt::Area;
 use kernel::prelude::*;
 use kernel::{
-    bindings, bit,
-    file,
+    bindings, bit, file,
     io_buffer::{IoBufferReader, IoBufferWriter},
     miscdev,
-    sync::{CondVar, Mutex, Arc, ArcBorrow, UniqueArc},
+    sync::{Arc, ArcBorrow, CondVar, Mutex, UniqueArc},
     user_ptr::{UserSlicePtrReader, UserSlicePtrWriter},
     Result,
 };
 
 mod exit;
 mod guest;
+mod lapic;
+mod lapic_priv;
+mod lib;
 mod mmu;
 mod vcpu;
 mod vmcs;
 mod vmstat;
 mod x86reg;
-mod lib;
 
 use crate::guest::GuestWrapper;
 use crate::vcpu::*;
@@ -107,7 +108,11 @@ impl file::Operations for KvmFile {
         Ok(())
     }
 
-   fn ioctl(this: ArcBorrow<'_, RkvmState>, file: &file::File, cmd: &mut file::IoctlCommand) -> Result<i32> {
+    fn ioctl(
+        this: ArcBorrow<'_, RkvmState>,
+        file: &file::File,
+        cmd: &mut file::IoctlCommand,
+    ) -> Result<i32> {
         cmd.dispatch::<RkvmState>(&this, file)
     }
 }
@@ -135,7 +140,7 @@ impl kernel::Module for RustMiscdev {
             pr_err!("RustKvm doesn't support 32-bit machine\n");
             return Err(ENOTSUPP);
         }
-        
+
         pr_info!("Rust kvm module (init) name={:?} \n", name);
         {
             let _lock = module.kernel_param_lock();
@@ -174,16 +179,13 @@ fn rkvm_vmxon(addr: u64) {
 }
 
 fn rkvm_vmxoff() {
-   let mut cr4: u64 = read_cr4();
-   cr4 &= !Cr4::CR4_ENABLE_VMX as u64;
-   unsafe {
-        asm!(
-            "vmxoff",
-            options(att_syntax)
-        );
-   }
-   write_cr4(cr4);
-   rkvm_debug!("vmxoff\n");
+    let mut cr4: u64 = read_cr4();
+    cr4 &= !Cr4::CR4_ENABLE_VMX as u64;
+    unsafe {
+        asm!("vmxoff", options(att_syntax));
+    }
+    write_cr4(cr4);
+    rkvm_debug!("vmxoff\n");
 }
 
 fn rkvm_set_vmxon(state: &RkvmState) -> Result<u32> {
@@ -405,7 +407,7 @@ impl file::IoctlHandler for RkvmState {
                 }
 
                 let ret = guest.add_memory_region(
-		    uaddr_.slot as u16,
+                    uaddr_.slot as u16,
                     uaddr_.userspace_addr,
                     uaddr_.memory_size >> 12,
                     uaddr_.guest_phys_addr,

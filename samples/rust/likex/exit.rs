@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0
-use super::{VcpuWrapper, RkvmRun};
+use super::{RkvmRun, VcpuWrapper};
+use crate::lapic_priv::*;
+use crate::mmu::RkvmMemFlag;
 use crate::mmu::*;
 use crate::vmcs::*;
 use crate::{rkvm_debug, DEBUG_ON};
 use core::arch::asm;
+use core::cmp::Ordering;
 use core::mem::MaybeUninit;
-use kernel::prelude::*;
-use kernel::{bindings, bit, sync::{Arc, ArcBorrow}, Result, PAGE_SIZE};
 use kernel::pages::Pages;
-use crate::mmu::RkvmMemFlag;
-
+use kernel::prelude::*;
+use kernel::{
+    bindings, bit,
+    sync::{Arc, ArcBorrow},
+    Result, PAGE_SIZE,
+};
 #[repr(u32)]
 #[derive(Debug, Copy, Clone)]
 #[allow(dead_code)]
@@ -311,7 +316,8 @@ pub(crate) fn handle_io(exit_info: &ExitInfo, vcpu: &VcpuWrapper) -> Result<u64>
     unsafe {
         (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).io.port = (exit_qualification >> 16) as u16;
         (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).io.size = ((exit_qualification & 7) + 1) as u8;
-        (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).io.direction = ((exit_qualification & 8) != 0) as u8;
+        (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).io.direction =
+            ((exit_qualification & 8) != 0) as u8;
         (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).io.count = 1;
         (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).exit_reason =
             (RkvmUserExitReason::from(exit_info.exit_reason)) as u32;
@@ -359,7 +365,7 @@ fn rkvm_pagefault(vcpu: &VcpuWrapper, fault: &mut RkvmPageFault) -> Result<u32> 
     };
 
     if slot.flags & (RkvmMemFlag::RkvmMemMmio as u32) != 0 {
-         return Ok(1);
+        return Ok(1);
     }
     let uaddr = slot.userspace_addr;
     let base_gfn = slot.base_gfn;
@@ -538,14 +544,14 @@ fn get_inst_info(guest_rip: u64, gpa: u64, inst_len: u32, vcpu: &VcpuWrapper) ->
     };
 
     if slot.flags & (RkvmMemFlag::RkvmMemMmio as u32) != 0 {
-         return Ok(());
+        return Ok(());
     }
     let uaddr = slot.userspace_addr;
     let base_gfn = slot.base_gfn;
     if gfn < base_gfn {
         return Err(EINVAL);
     }
-//  let hva = uaddr + (gfn - base_gfn) * kernel::PAGE_SIZE as u64;
+    //  let hva = uaddr + (gfn - base_gfn) * kernel::PAGE_SIZE as u64;
     let mut nrpages: i64 = 0;
     let flags: u32 = bindings::FOLL_HWPOISON | bindings::FOLL_NOWAIT;
     let offset: u64 = guest_rip & ((1u64 << 12) - 1);
@@ -557,13 +563,21 @@ fn get_inst_info(guest_rip: u64, gpa: u64, inst_len: u32, vcpu: &VcpuWrapper) ->
         }
         let page = *pages.as_mut_ptr() as *mut bindings::page;
         let rpage = Pages::<0>::get_page(page).unwrap();
-        let mut ptr = (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).mmio.inst_buf.as_mut_ptr() as *mut u8;
-        rpage.read(ptr, offset.try_into().unwrap(), inst_len.try_into().unwrap());
-        (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).exit_reason = RkvmUserExitReason::RKVM_EXIT_MMIO as u32;
+        let mut ptr = (*(vcpuinner.run.as_mut_ptr::<RkvmRun>()))
+            .mmio
+            .inst_buf
+            .as_mut_ptr() as *mut u8;
+        rpage.read(
+            ptr,
+            offset.try_into().unwrap(),
+            inst_len.try_into().unwrap(),
+        );
+        (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).exit_reason =
+            RkvmUserExitReason::RKVM_EXIT_MMIO as u32;
         (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).mmio.inst_len = inst_len as u16;
         (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).mmio.gpa = gpa;
     }
-   Ok(())
+    Ok(())
 }
 
 pub(crate) fn handle_ept_violation(exit_info: &ExitInfo, vcpu: &VcpuWrapper) -> Result<u64> {
@@ -608,13 +622,14 @@ pub(crate) fn handle_ept_violation(exit_info: &ExitInfo, vcpu: &VcpuWrapper) -> 
 
     let ret = rkvm_pagefault(vcpu, &mut fault);
     match ret {
-        Ok(r) =>  {
-           if r > 0 { // hit mmio region
-              // let cs = vmcs_read64(VmcsField::GUEST_CR3);
-              let guest_rip = vmcs_read64(VmcsField::GUEST_RIP);
-              get_inst_info(guest_rip, gpa, inst_len, vcpu);
-              return Ok(0);
-           }
+        Ok(r) => {
+            if r > 0 {
+                // hit mmio region
+                // let cs = vmcs_read64(VmcsField::GUEST_CR3);
+                let guest_rip = vmcs_read64(VmcsField::GUEST_RIP);
+                get_inst_info(guest_rip, gpa, inst_len, vcpu);
+                return Ok(0);
+            }
         }
         Err(e) => return Err(e),
     };
@@ -659,4 +674,40 @@ pub(crate) fn handle_cpuid(exit_info: &ExitInfo, vcpu: &VcpuWrapper) -> Result<u
     exit_info.next_rip();
 
     Ok(0)
+}
+
+fn handle_apic_wrmsr(exit_info: &ExitInfo, vcpu: &VcpuWrapper) -> Result<u64> {
+    let mut vcpuinner = vcpu.vcpuinner.lock();
+    let eax = (vcpuinner.guest_state.rax & 0xffffffff as u64) as u32;
+    let ecx = (vcpuinner.guest_state.rcx & 0xffffffff as u64) as u32;
+    let edx = (vcpuinner.guest_state.rdx & 0xffffffff as u64) as u32;
+    match X2apicMsr::from(ecx) {
+        X2apicMsr::SELF_IPI => {}
+        X2apicMsr::INITIAL_COUNT => {}
+        X2apicMsr::EOI => {}
+        X2apicMsr::LVT_TIMER => {}
+        X2apicMsr::INITIAL_COUNT => {}
+        _ => {
+            rkvm_debug!(" Unknow x2apic msr={} \n", ecx);
+        }
+    }
+    Ok(0)
+}
+
+pub(crate) fn handle_wrmsr(exit_info: &ExitInfo, vcpu: &VcpuWrapper) -> Result<u64> {
+    let mut vcpuinner = vcpu.vcpuinner.lock();
+    // rcx specifies the MSR and edx:eax contains the value to be written.
+    let cmd = vcpuinner.guest_state.rcx as u64;
+    match cmd {
+        /* X2ApicMsrBase..=X2ApicMsrMax */
+        0x800..=0x83f => {
+            return handle_apic_wrmsr(exit_info, vcpu);
+        }
+        /*X86MsrIA32Cstar */
+        0xc0000083 => {
+            exit_info.next_rip();
+            return Ok(0);
+        }
+        _ => Ok(0),
+    }
 }

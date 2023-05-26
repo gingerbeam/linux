@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
-use kernel::prelude::*;
-use kernel::task::Task;
-use kernel::{bindings, mutex_init, Result};
-use kernel::unsafe_list::{Adapter, Links, List};
 use crate::{rkvm_debug, DEBUG_ON};
-use kernel::sync::{Mutex, Arc, UniqueArc};
+use kernel::prelude::*;
+use kernel::sync::{Arc, Mutex, UniqueArc};
+use kernel::task::Task;
+use kernel::unsafe_list::{Adapter, Links, List};
 use kernel::PAGE_SIZE;
+use kernel::{bindings, mutex_init, Result};
 //#[derive(Copy, Clone)]
 #[allow(dead_code)]
 pub(crate) struct RkvmMemorySlot {
@@ -20,10 +20,9 @@ pub(crate) struct RkvmMemorySlot {
 unsafe impl Adapter for RkvmMemorySlot {
     type EntryType = Self;
     fn to_links(obj: &Self) -> &Links<Self> {
-       &obj.links
+        &obj.links
     }
 }
-
 
 #[allow(dead_code)]
 pub(crate) struct Guest {
@@ -39,9 +38,7 @@ pub(crate) struct GuestWrapper {
 impl GuestWrapper {
     /// Create a Guest.
     pub(crate) fn new() -> Result<Arc<Self>> {
-        let mm_ = unsafe { 
-                    Task::current().mm().get()
-                  };
+        let mm_ = unsafe { Task::current().mm().get() };
 
         let mut guest = Pin::from(UniqueArc::try_new(Self {
             guestinner: unsafe {
@@ -58,18 +55,25 @@ impl GuestWrapper {
         Ok(guest.into())
     }
 
-    pub(crate) fn add_memory_region(&self, slot: u16, uaddr: u64, npages: u64, gpa: u64, flags: u32) -> Result<i32> {
+    pub(crate) fn add_memory_region(
+        &self,
+        slot: u16,
+        uaddr: u64,
+        npages: u64,
+        gpa: u64,
+        flags: u32,
+    ) -> Result<i32> {
         if gpa & (kernel::PAGE_SIZE - 1) as u64 != 0 {
             return Err(ENOMEM);
         }
         let newslot = UniqueArc::try_new(RkvmMemorySlot {
-                           links: Links::new(),
-                           base_gfn: gpa >> 12,
-                           npages: npages,
-                           userspace_addr: uaddr,
-                           slot_id: slot,
-                           flags: flags,
-                      })?;
+            links: Links::new(),
+            base_gfn: gpa >> 12,
+            npages: npages,
+            userspace_addr: uaddr,
+            slot_id: slot,
+            flags: flags,
+        })?;
         let newslot = Arc::from(newslot);
 
         // TODO: Dealing with slot overlap issues
@@ -82,7 +86,7 @@ impl GuestWrapper {
         guestinner.num_slots += 1;
         rkvm_debug!(
             " add_memory_region slot= {},uaddr={:x}, gpa = {:x}, npages={:x}, flags={:x} \n",
-	    slot,
+            slot,
             uaddr,
             gpa,
             npages,
@@ -93,15 +97,15 @@ impl GuestWrapper {
     }
 
     pub(crate) fn find_slot(&self, gfn: u64) -> Result<Arc<RkvmMemorySlot>> {
-       let guestinner = self.guestinner.lock();
-       for (_i, e) in guestinner.slots_list.iter().enumerate() {
-           if (gfn >= e.base_gfn) && (gfn <= e.base_gfn + PAGE_SIZE as u64 * e.npages) {
-              let slot = unsafe { Arc::<RkvmMemorySlot>::from_raw(e) };
-              return Ok(slot);
-           }
-       }
-       Err(EINVAL)
-   }
+        let guestinner = self.guestinner.lock();
+        for (_i, e) in guestinner.slots_list.iter().enumerate() {
+            if (gfn >= e.base_gfn) && (gfn <= e.base_gfn + PAGE_SIZE as u64 * e.npages) {
+                let slot = unsafe { Arc::<RkvmMemorySlot>::from_raw(e) };
+                return Ok(slot);
+            }
+        }
+        Err(EINVAL)
+    }
 }
 
 impl Drop for GuestWrapper {

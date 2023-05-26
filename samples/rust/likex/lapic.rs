@@ -1,61 +1,35 @@
 // SPDX-License-Identifier: GPL-2.0
 
-use kernel::prelude::*;
+use crate::lib::Bitmap;
+use kernel::error;
+use kernel::{bindings, prelude::*};
 
-#[repr(u32)]
-#[allow(dead_code)]
-#[allow(non_camel_case_types)]
-pub(crate) enum LapicReg {
-  LAPIC_REG_ID = 0x020,
-  LAPIC_REG_VERSION = 0x030,
-  LAPIC_REG_TASK_PRIORITY = 0x080,
-  LAPIC_REG_PROCESSOR_PRIORITY = 0x0A0,
-  LAPIC_REG_EOI = 0x0B0,
-  LAPIC_REG_LOGICAL_DST = 0x0D0,
-  LAPIC_REG_SPURIOUS_IRQ = 0x0F0,
-  LAPIC_REG_ERROR_STATUS = 0x280,
-  LAPIC_REG_LVT_CMCI = 0x2F0,
-  LAPIC_REG_IRQ_CMD_LOW = 0x300,
-  LAPIC_REG_IRQ_CMD_HIGH = 0x310,
-  LAPIC_REG_LVT_TIMER = 0x320,
-  LAPIC_REG_LVT_THERMAL = 0x330,
-  LAPIC_REG_LVT_PERF = 0x340,
-  LAPIC_REG_LVT_LINT0  = 0x350,
-  LAPIC_REG_LVT_LINT1 = 0x360,
-  LAPIC_REG_LVT_ERROR = 0x370,
-  LAPIC_REG_INIT_COUNT = 0x380,
-  LAPIC_REG_CURRENT_COUNT = 0x390,
-  LAPIC_REG_DIVIDE_CONF = 0x3E0,
-  // X2APIC
-  LAPIC_X2APIC_MSR_BASE = 0x800,
-  LAPIC_X2APIC_MSR_ICR = 0x830,
-  LAPIC_X2APIC_MSR_SELF_IPI = 0x83f,
-
-  SVR_APIC_ENABLE = 1 << 8,
-
-  // Interrupt Command bitmasks
-  ICR_DELIVERY_PENDING = 1 << 12,
-  ICR_LEVEL_ASSERT = 1 << 14,
-}
-
+use crate::lapic_priv::X86InterruptVector::X86_INT_NMI;
+use crate::lapic_priv::X86InterruptVector::X86_INT_PLATFORM_BASE;
+use crate::lapic_priv::X86InterruptVector::X86_INT_VIRT;
+use crate::vmcs::*;
+use crate::x86reg::RFlags;
 macro_rules! ICR_DST {
-  ($x:expr) => {
-     ($x as u32) << 24
-  };
+    ($x:expr) => {
+        ($x as u32) << 24
+    };
 }
 
 macro_rules! ICR_DELIVERY_MODE {
-  ($x:expr) => {
-     ($x as u32) << 8
-  };
+    ($x:expr) => {
+        ($x as u32) << 8
+    };
 }
 
 macro_rules! ICR_DST_SHORTHAND {
-  ($x:expr) => {
-     ($x as u32) << 18
-  };
+    ($x:expr) => {
+        ($x as u32) << 18
+    };
 }
 
+static InterruptibilityStiBlocking: u32 = 1 << 0;
+static InterruptibilityMovSsBlocking: u32 = 1 << 1;
+static InterruptibilityNmiBlocking: u32 = 1 << 3;
 
 // ICR_DST_BROADCAST ICR_DST(0xff)
 // ICR_DST_SELF ICR_DST_SHORTHAND(1)
@@ -63,43 +37,82 @@ macro_rules! ICR_DST_SHORTHAND {
 // ICR_DST_ALL_MINUS_SELF ICR_DST_SHORTHAND(3)
 
 macro_rules! LAPIC_REG_IN_SERVICE {
-  ($x:expr) => {
-     0x100 as u32 + ($x as u32) << 4
-  };
+    ($x:expr) => {
+        0x100 as u32 + ($x as u32) << 4
+    };
 }
 
 macro_rules! LAPIC_REG_TRIGGER_MODE {
-  ($x:expr) => {
-     0x180 as u32 + ($x as u32) << 4
-  };
+    ($x:expr) => {
+        0x180 as u32 + ($x as u32) << 4
+    };
 }
 
 macro_rules! LAPIC_REG_IRQ_REQUEST {
-  ($x:expr) => {
-     0x200 as u32 + ($x as u32) << 4
-  };
+    ($x:expr) => {
+        0x200 as u32 + ($x as u32) << 4
+    };
 }
 
 pub(crate) struct LapicReg {}
 
-pub(crate) struct IntrTracker {
-
-}
-
-
 pub(crate) struct RkvmLapicState {
     pub(crate) base_address: u64,
-    pub(crate) lapic_timer: RkvmTimer,
+    pub(crate) lapic_timer: bindings::hrtimer,
     pub(crate) timer_dconfig: u32,
     pub(crate) timer_init: u32,
-    pub(crate) interrupt_bitmap: IntrTracker,
+    pub(crate) interrupt_bitmap: Bitmap,
     /// The highest vector set in ISR; if -1 - invalid, must scan ISR.
     pub(crate) highest_isr_cache: u32,
     /// APIC register page.  The layout matches the register layout seen by
     /// the guest 1:1, because it is accessed by the vmx microcode.
     /// Note: Only one register, the TPR, is used by the microcode.
-    regs: LapicReg,
-    pub(crate) vapic_addr: u64,
+    pub(crate) regs: LapicReg,
 }
 
+impl RkvmLapicState {
+    pub(crate) fn lapicInterrupt(&mut self) -> Result<i32> {
+        let mut vector: u8;
+        let active = self.interrupt_bitmap.get(X86_INT_NMI as usize);
+        if active == false {
+            vector = X86_INT_NMI as u8;
+        } else {
+            // get normal interrupt vector
+            vector = self.interrupt_bitmap.scan() as u8;
+            if vector != 0xff {
+                self.interrupt_bitmap.clear(vector.into());
+            } else {
+                return Ok(0);
+            }
+        }
+        // inject interrupt
+        let can_inj_nmi = vmcs_read32(VmcsField::GUEST_INTERRUPTIBILITY_INFO)
+            & (InterruptibilityNmiBlocking | InterruptibilityMovSsBlocking)
+            == 0;
+        let can_inj_int = (vmcs_read64(VmcsField::GUEST_RFLAGS) & RFlags::FLAGS_IF as u64 != 0)
+            && (vmcs_read32(VmcsField::GUEST_INTERRUPTIBILITY_INFO)
+                & (InterruptibilityStiBlocking | InterruptibilityMovSsBlocking))
+                == 0;
+        if vector > X86_INT_VIRT as u8 && vector < X86_INT_PLATFORM_BASE as u8 {
+            pr_err!("Invalid interrupt vector: {}\n", vector);
+            return Err(ENOTSUPP);
+        } else if (vector >= X86_INT_PLATFORM_BASE as u8 && !can_inj_int)
+            || (vector == X86_INT_NMI as u8 && !can_inj_nmi)
+        {
+            self.interrupt_bitmap.set(vector.into());
+            // If interrupts are disabled, we set VM exit on interrupt enable.
+            InterruptWindowExiting(true);
+            return Ok(0);
+        }
+        IssueInterrupt(vector);
 
+        // Volume 3, Section 6.9: Lower priority exceptions are discarded; lower priority interrupts are
+        // held pending. Discarded exceptions are re-generated when the interrupt handler returns
+        // execution to the point in the program or task where the exceptions and/or interrupts
+        // occurred.
+        self.interrupt_bitmap.clear_range(0, X86_INT_NMI as usize);
+        self.interrupt_bitmap
+            .clear_range(X86_INT_NMI as usize + 1, X86_INT_VIRT as usize + 1);
+        return Ok(0);
+    }
+}

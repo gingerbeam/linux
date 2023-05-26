@@ -2,13 +2,13 @@
 //! Virtual-machine control structure fields.
 //!
 //! See Intel SDM, Volume 3D, Appendix B.
+use crate::lapic_priv::X86InterruptVector;
 use crate::x86reg::*;
 use crate::{rkvm_debug, DEBUG_ON};
 use core::arch::asm;
 use core::arch::global_asm;
 use kernel::bindings;
 use kernel::prelude::*;
-
 /// VM-execution, VM-exit, and VM-entry control fields
 
 /// Pin-based VM-execution controls.
@@ -508,6 +508,75 @@ fn set_control(field: VmcsField, true_msr: u64, old_msr: u64, set: u32, clear: u
     let defaults = unknown & old_msr as u32;
 
     Ok(allowed_0 | defaults | set)
+}
+
+// interrupt func
+static InterruptInfoValid: u32 = 1 << 31;
+static InterruptInfoDeliverErrorCode: u32 = 1 << 11;
+static InterruptTypeNmi: u32 = 2 << 8;
+static InterruptTypeHardwareException: u32 = 3 << 8;
+static InterruptTypeSoftwareException: u32 = 6 << 8;
+static BaseProcessorVpid: u16 = 1;
+
+pub(crate) fn InterruptWindowExiting(val: bool) {
+    let mut controls: u32 = vmcs_read32(VmcsField::CPU_BASED_VM_EXEC_CONTROL);
+    if val {
+        controls |= PrimaryControls::INTERRUPT_WINDOW_EXITING;
+    } else {
+        controls &= !PrimaryControls::INTERRUPT_WINDOW_EXITING;
+    }
+    vmcs_write32(VmcsField::CPU_BASED_VM_EXEC_CONTROL, controls);
+}
+
+fn has_error_code(vector: u8) -> bool {
+    match X86InterruptVector::from(vector) {
+        X86InterruptVector::X86_INT_DOUBLE_FAULT => {
+            return true;
+        }
+        X86InterruptVector::X86_INT_INVALID_TSS => {
+            return true;
+        }
+        X86InterruptVector::X86_INT_SEGMENT_NOT_PRESENT => {
+            return true;
+        }
+        X86InterruptVector::X86_INT_STACK_FAULT => {
+            return true;
+        }
+        X86InterruptVector::X86_INT_GP_FAULT => {
+            return true;
+        }
+        X86InterruptVector::X86_INT_PAGE_FAULT => {
+            return true;
+        }
+        X86InterruptVector::X86_INT_ALIGNMENT_CHECK => {
+            return true;
+        }
+        _ => {
+            return false;
+        }
+    }
+}
+
+pub(crate) fn IssueInterrupt(vector: u8) {
+    let mut interrupt_info: u32 = InterruptInfoValid | (vector & 0xff) as u32;
+    if vector == X86InterruptVector::X86_INT_BREAKPOINT as u8
+        || vector == X86InterruptVector::X86_INT_OVERFLOW as u8
+    {
+        // A VMM should use type hardware exception for all exceptions other than
+        // breakpoints and overflows, which should be software exceptions.
+        interrupt_info |= InterruptTypeSoftwareException;
+    } else if vector == X86InterruptVector::X86_INT_NMI as u8 {
+        interrupt_info |= InterruptTypeNmi;
+    } else if vector <= X86InterruptVector::X86_INT_VIRT as u8 {
+        // All other vectors from 0 to X86_INT_VIRT are exceptions.
+        interrupt_info |= InterruptTypeHardwareException;
+    }
+    if has_error_code(vector) {
+        interrupt_info |= InterruptInfoDeliverErrorCode;
+        vmcs_write(VmcsField::VM_ENTRY_EXCEPTION_ERROR_CODE, 0);
+    }
+ 
+    vmcs_write32(VmcsField::VM_ENTRY_INTR_INFO_FIELD, interrupt_info);
 }
 
 pub(crate) fn dump_vmcs() {

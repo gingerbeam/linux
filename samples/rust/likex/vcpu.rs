@@ -7,13 +7,13 @@ use crate::vmstat::*;
 use crate::x86reg::*;
 use crate::{rkvm_debug, DEBUG_ON};
 use core::arch::{asm, global_asm};
+use core::ffi::c_void;
 use core::pin::Pin;
 use kernel::bindings;
 use kernel::pages::Pages;
 use kernel::prelude::*;
-use kernel::sync::{Mutex, Arc, UniqueArc};
+use kernel::sync::{Arc, Mutex, UniqueArc};
 use kernel::{Result, PAGE_SIZE};
-use core::ffi::c_void;
 
 #[repr(C)]
 #[allow(dead_code)]
@@ -143,9 +143,9 @@ pub(crate) struct Pio {
 
 #[repr(C)]
 pub(crate) struct Mmio {
-   pub(crate) gpa: u64,
-   pub(crate) inst_len: u16,
-   pub(crate) inst_buf:[u8;15],
+    pub(crate) gpa: u64,
+    pub(crate) inst_len: u16,
+    pub(crate) inst_buf: [u8; 15],
 }
 
 #[repr(C)]
@@ -345,10 +345,13 @@ impl VcpuWrapper {
                     }
                     return Err(EINVAL);
                 }
-		// The mmio spte page table method is not used, and the mmio command is emulated 
-		// in user mode, so the ept misconfig will not be triggered.
-		pr_err!(" EPT_MISCONFIGURATION is invalid, vector_info: {:x} \n", vector_info);
-		return Err(EINVAL);
+                // The mmio spte page table method is not used, and the mmio command is emulated
+                // in user mode, so the ept misconfig will not be triggered.
+                pr_err!(
+                    " EPT_MISCONFIGURATION is invalid, vector_info: {:x} \n",
+                    vector_info
+                );
+                return Err(EINVAL);
             }
             _ => {
                 pr_err!(" vmx exit_reason = {:?} \n", exit_info.exit_reason);
@@ -411,7 +414,7 @@ impl VcpuWrapper {
 
                 let ret = vmcs_read32(VmcsField::VM_INSTRUCTION_ERROR);
                 let rflags = read_rflags();
-                
+
                 pr_err!(
                     "run loop after _vmx_vcpu_run, rflags={:x},ret={:x} \n",
                     rflags,

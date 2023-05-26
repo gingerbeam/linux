@@ -4,15 +4,16 @@ use kernel::{
     //linked_list::{GetLinks, Links, List},
     pages::Pages,
     prelude::*,
-    unsafe_list::{Adapter, Links, List},
     sync::{Arc, UniqueArc},
-    Result, PAGE_SIZE,
+    unsafe_list::{Adapter, Links, List},
+    Result,
+    PAGE_SIZE,
 };
 
-use core::ffi::c_void;
 use crate::vmcs::*;
 use crate::x86reg::*;
 use crate::{rkvm_debug, DEBUG_ON};
+use core::ffi::c_void;
 
 #[repr(u32)]
 pub(crate) enum RkvmMemFlag {
@@ -169,7 +170,7 @@ impl RkvmMmu {
         let mut mmu = UniqueArc::try_new(Self {
             root_hpa: hpa, //physical addr
             root_mmu_page: root.clone(),
-            mmu_root_list:  List::new(),
+            mmu_root_list: List::new(),
             mmu_pages_list: List::new(),
             spte_flags: flags.clone(),
         })?;
@@ -177,11 +178,10 @@ impl RkvmMmu {
         let root = Arc::from(root);
         Arc::into_raw(root.clone());
 
-        unsafe { mmu.mmu_root_list.push_back(&*root)};
+        unsafe { mmu.mmu_root_list.push_back(&*root) };
         Ok(mmu)
     }
     pub(crate) fn alloc_mmu_page(&mut self, level: u64, gfn: u64) -> Result<Arc<RkvmMmuPage>> {
-
         let mmu_page = RkvmMmuPage::new(false, level, Some(gfn));
         let mmu_page = match mmu_page {
             Ok(page) => page,
@@ -197,7 +197,7 @@ impl RkvmMmu {
         }
 
         Arc::into_raw(mmu_page.clone());
-        unsafe { self.mmu_pages_list.push_back(&*mmu_page)};
+        unsafe { self.mmu_pages_list.push_back(&*mmu_page) };
         Ok(mmu_page)
     }
 
@@ -238,7 +238,7 @@ pub(crate) struct RkvmMmuPage {
 unsafe impl Adapter for RkvmMmuPage {
     type EntryType = Self;
     fn to_links(obj: &Self) -> &Links<Self> {
-       &obj.links
+        &obj.links
     }
 }
 
@@ -263,4 +263,3 @@ impl RkvmMmuPage {
         Ok(mmu_page)
     }
 }
-
