@@ -4,14 +4,13 @@ use crate::exit::*;
 use crate::mmu::*;
 use crate::vmcs::*;
 use crate::vmstat::*;
+use crate::lapic::*;
 use crate::x86reg::*;
 use crate::{rkvm_debug, DEBUG_ON};
 use core::arch::{asm, global_asm};
 use core::ffi::c_void;
 use core::pin::Pin;
-use kernel::bindings;
-use kernel::pages::Pages;
-use kernel::prelude::*;
+use kernel::{ bindings, pages::Pages, prelude::*};
 use kernel::sync::{Arc, Mutex, UniqueArc};
 use kernel::{Result, PAGE_SIZE};
 
@@ -214,6 +213,7 @@ pub(crate) struct Vcpu {
     pub(crate) host_state: Pin<Box<HostState>>,
     // DefMut trait for UniqueArc, List use it
     pub(crate) mmu: UniqueArc<RkvmMmu>,
+    pub(crate) lapic: Pin<Box<RkvmLapicState>>,
     pub(crate) run: RkvmPage,
     pub(crate) vmcs: RkvmPage,
     pub(crate) vcpu_id: u32,
@@ -265,25 +265,15 @@ impl VcpuWrapper {
         let state = Pin::from(Box::try_new(GuestState::new())?);
         let host_state = Pin::from(Box::try_new(HostState::new())?);
         // kvm_run
-        let page = Pages::<0>::new();
-        let run = match page {
-            Ok(page) => page,
-            Err(err) => return Err(err),
-        };
-        let run = RkvmPage::new(run);
+        let page = Pages::<0>::new()?;
+        let run = RkvmPage::new(page);
+
         // alloc vmcs and init
-        let vmcs = alloc_vmcs(revision_id);
-        let vmcs = match vmcs {
-            Ok(vmcs) => vmcs,
-            Err(err) => return Err(err),
-        };
+        let vmcs = alloc_vmcs(revision_id)?;
+        let mmu = RkvmMmu::new()?;
 
-        let mmu = RkvmMmu::new();
-
-        let mmu = match mmu {
-            Ok(mmu) => mmu,
-            Err(err) => return Err(err),
-        };
+        let lapic = RkvmLapicState::new(0xfffff000)?;
+        let lapic = Pin::from(Box::try_new(lapic)?);
 
         let mut v = Pin::from(UniqueArc::try_new(Self {
             vcpuinner: unsafe {
@@ -291,6 +281,7 @@ impl VcpuWrapper {
                     guest: guest,
                     guest_state: state,
                     host_state: host_state,
+                    lapic: lapic,
                     mmu: mmu,
                     run: run,
                     vmcs: vmcs,
@@ -383,9 +374,11 @@ impl VcpuWrapper {
             rkvm_irq_disable();
             let has_err_;
             {
-                let vcpuinner = self.vcpuinner.lock();
+                let mut vcpuinner = self.vcpuinner.lock();
                 let launched = vcpuinner.guest_state.launched;
 
+                // handle interrupt inject
+                vcpuinner.lapic.lapicInterrupt();
                 rkvm_debug!(
                     " vmentry: launched = {:?}, guest_rip={:x} \n",
                     launched,

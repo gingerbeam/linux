@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 
 use crate::lib::Bitmap;
-use kernel::error;
-use kernel::{bindings, prelude::*};
-
+use kernel::{error, Result,bindings, prelude::*};
+use kernel::sync::Arc;
 use crate::lapic_priv::X86InterruptVector::X86_INT_NMI;
 use crate::lapic_priv::X86InterruptVector::X86_INT_PLATFORM_BASE;
 use crate::lapic_priv::X86InterruptVector::X86_INT_VIRT;
@@ -58,21 +57,34 @@ pub(crate) struct LapicReg {}
 
 pub(crate) struct RkvmLapicState {
     pub(crate) base_address: u64,
-    pub(crate) lapic_timer: bindings::hrtimer,
+    //pub(crate) lapic_timer: bindings::hrtimer,
     pub(crate) timer_dconfig: u32,
     pub(crate) timer_init: u32,
     pub(crate) interrupt_bitmap: Bitmap,
+    //pub(crate) regs: LapicReg,
     /// The highest vector set in ISR; if -1 - invalid, must scan ISR.
     pub(crate) highest_isr_cache: u32,
-    /// APIC register page.  The layout matches the register layout seen by
-    /// the guest 1:1, because it is accessed by the vmx microcode.
-    /// Note: Only one register, the TPR, is used by the microcode.
-    pub(crate) regs: LapicReg,
 }
 
 impl RkvmLapicState {
+    pub(crate) fn new(base: u64) -> Result<Self> {
+        let interrupt_bitmap = Bitmap::new(256);
+        let interrupt_bitmap = match interrupt_bitmap {
+            Ok(interrupt_bitmap) => interrupt_bitmap,
+            Err(err) => return Err(err),
+        };
+
+        let lapic = Self {
+            base_address: base,
+            timer_dconfig: 0,
+            timer_init:    0,
+            interrupt_bitmap: interrupt_bitmap,
+            highest_isr_cache: 0,
+        };
+        Ok(lapic)
+    }
     pub(crate) fn lapicInterrupt(&mut self) -> Result<i32> {
-        let mut vector: u8;
+        let vector: u8;
         let active = self.interrupt_bitmap.get(X86_INT_NMI as usize);
         if active == false {
             vector = X86_INT_NMI as u8;
@@ -104,7 +116,7 @@ impl RkvmLapicState {
             InterruptWindowExiting(true);
             return Ok(0);
         }
-        IssueInterrupt(vector);
+        issue_interrupt(vector);
 
         // Volume 3, Section 6.9: Lower priority exceptions are discarded; lower priority interrupts are
         // held pending. Discarded exceptions are re-generated when the interrupt handler returns

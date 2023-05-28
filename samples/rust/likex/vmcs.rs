@@ -557,7 +557,7 @@ fn has_error_code(vector: u8) -> bool {
     }
 }
 
-pub(crate) fn IssueInterrupt(vector: u8) {
+pub(crate) fn issue_interrupt(vector: u8) {
     let mut interrupt_info: u32 = InterruptInfoValid | (vector & 0xff) as u32;
     if vector == X86InterruptVector::X86_INT_BREAKPOINT as u8
         || vector == X86InterruptVector::X86_INT_OVERFLOW as u8
