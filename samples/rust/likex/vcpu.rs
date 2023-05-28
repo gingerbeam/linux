@@ -221,11 +221,8 @@ pub(crate) struct Vcpu {
 }
 
 pub(crate) fn alloc_vmcs(revision_id: u32) -> Result<RkvmPage> {
-    let page = Pages::<0>::new();
-    let page = match page {
-        Ok(page) => page,
-        Err(err) => return Err(err),
-    };
+    let page = Pages::<0>::new()?;
+
     let vmcs = RkvmPage::new(page);
     unsafe {
         (*(vmcs.as_mut_ptr::<RkvmVmcs>())).revision_id = revision_id;

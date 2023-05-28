@@ -135,11 +135,7 @@ pub(crate) struct RkvmMmu {
 
 impl RkvmMmu {
     pub(crate) fn new() -> Result<UniqueArc<Self>> {
-        let root = RkvmMmuPage::new(true, 4, None); //root level = 4
-        let root = match root {
-            Ok(root) => root,
-            Err(err) => return Err(err),
-        };
+        let root = RkvmMmuPage::new(true, 4, None)?; //root level = 4
 
         let hpa = match root.spt {
             Some(hpa) => hpa,
@@ -182,11 +178,7 @@ impl RkvmMmu {
         Ok(mmu)
     }
     pub(crate) fn alloc_mmu_page(&mut self, level: u64, gfn: u64) -> Result<Arc<RkvmMmuPage>> {
-        let mmu_page = RkvmMmuPage::new(false, level, Some(gfn));
-        let mmu_page = match mmu_page {
-            Ok(page) => page,
-            Err(err) => return Err(err),
-        };
+        let mmu_page = RkvmMmuPage::new(false, level, Some(gfn))?;
         let vaddr = match mmu_page.spt {
             Some(va) => va,
             None => return Err(ENOMEM),

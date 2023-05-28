@@ -518,7 +518,7 @@ static InterruptTypeHardwareException: u32 = 3 << 8;
 static InterruptTypeSoftwareException: u32 = 6 << 8;
 static BaseProcessorVpid: u16 = 1;
 
-pub(crate) fn InterruptWindowExiting(val: bool) {
+pub(crate) fn interrupt_window_exiting(val: bool) {
     let mut controls: u32 = vmcs_read32(VmcsField::CPU_BASED_VM_EXEC_CONTROL);
     if val {
         controls |= PrimaryControls::INTERRUPT_WINDOW_EXITING;

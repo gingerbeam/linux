@@ -358,11 +358,7 @@ macro_rules! RKVM_PAGES_PER_HPAGE {
 }
 fn rkvm_pagefault(vcpu: &VcpuWrapper, fault: &mut RkvmPageFault) -> Result<u32> {
     let vcpuinner = vcpu.vcpuinner.lock();
-    let slot = vcpuinner.guest.find_slot(fault.gfn);
-    let slot = match slot {
-        Ok(slot) => slot,
-        Err(err) => return Err(err),
-    };
+    let slot = vcpuinner.guest.find_slot(fault.gfn)?;
 
     if slot.flags & (RkvmMemFlag::RkvmMemMmio as u32) != 0 {
         return Ok(1);

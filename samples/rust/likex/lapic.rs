@@ -2,7 +2,6 @@
 
 use crate::lib::Bitmap;
 use kernel::{error, Result,bindings, prelude::*};
-use kernel::sync::Arc;
 use crate::lapic_priv::X86InterruptVector::X86_INT_NMI;
 use crate::lapic_priv::X86InterruptVector::X86_INT_PLATFORM_BASE;
 use crate::lapic_priv::X86InterruptVector::X86_INT_VIRT;
@@ -113,7 +112,7 @@ impl RkvmLapicState {
         {
             self.interrupt_bitmap.set(vector.into());
             // If interrupts are disabled, we set VM exit on interrupt enable.
-            InterruptWindowExiting(true);
+            interrupt_window_exiting(true);
             return Ok(0);
         }
         issue_interrupt(vector);
