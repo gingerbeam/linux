@@ -71,11 +71,7 @@ extern "C" fn lapic_timer_callback(arg1: *mut bindings::hrtimer) -> bindings::hr
 
 impl RkvmLapicState {
     pub(crate) fn new(base: u64) -> Result<Self> {
-        let interrupt_bitmap = Bitmap::new(256);
-        let interrupt_bitmap = match interrupt_bitmap {
-            Ok(interrupt_bitmap) => interrupt_bitmap,
-            Err(err) => return Err(err),
-        };
+        let interrupt_bitmap = Bitmap::new(256)?;
 
         let mut lapic = Self {
             base_address: base,

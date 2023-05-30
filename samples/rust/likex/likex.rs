@@ -190,11 +190,7 @@ fn rkvm_vmxoff() {
 
 fn rkvm_set_vmxon(state: &RkvmState) -> Result<u32> {
     let revision_id = state.inner.lock().vmcsconf.revision_id;
-    let vmcs = alloc_vmcs(revision_id);
-    let vmcs = match vmcs {
-        Ok(vmcs) => vmcs,
-        Err(err) => return Err(/*ENOMEM*/ err),
-    };
+    let vmcs = alloc_vmcs(revision_id)?;
 
     let vmxe = read_cr4() & Cr4::CR4_ENABLE_VMX as u64;
 
@@ -245,12 +241,7 @@ impl file::IoctlHandler for RkvmState {
                     pr_err!("Rkvm: IOCTL_KVM_CREATE_VM failed\n");
                     return Err(error);
                 }
-                let guest = GuestWrapper::new();
-
-                let guest = match guest {
-                    Err(error) => return Err(error),
-                    Ok(guest) => guest,
-                };
+                let guest = GuestWrapper::new()?;
                 unsafe {
                     GUEST = Some(guest);
                 }
@@ -268,12 +259,7 @@ impl file::IoctlHandler for RkvmState {
                 rkvm_debug!("Rust kvm: IOCTL_KVM_CREATE_VCPU \n");
 
                 let revision_id = _shared.inner.lock().vmcsconf.revision_id;
-                let vcpu0 = VcpuWrapper::new(guest, revision_id);
-
-                let vcpu0 = match vcpu0 {
-                    Err(error) => return Err(error),
-                    Ok(vcpu0) => vcpu0,
-                };
+                let vcpu0 = VcpuWrapper::new(guest, revision_id)?;
 
                 vcpu0.init(&mut _shared.inner.lock().vmcsconf);
                 let va = vcpu0.get_run();
