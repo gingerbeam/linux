@@ -8,7 +8,7 @@ use core::ffi::c_void;
 use kernel::mm::virt::Area;
 use kernel::prelude::*;
 use kernel::{
-    bindings, bit, file,
+    bindings, file,
     io_buffer::{IoBufferReader, IoBufferWriter},
     miscdev,
     sync::{Arc, ArcBorrow, CondVar, Mutex, UniqueArc},

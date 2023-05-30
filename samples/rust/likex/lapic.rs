@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 
-use crate::lib::Bitmap;
-use kernel::{error, Result,bindings, prelude::*};
 use crate::lapic_priv::X86InterruptVector::X86_INT_NMI;
 use crate::lapic_priv::X86InterruptVector::X86_INT_PLATFORM_BASE;
 use crate::lapic_priv::X86InterruptVector::X86_INT_VIRT;
+use crate::lib::Bitmap;
 use crate::vmcs::*;
 use crate::x86reg::RFlags;
+use kernel::{bindings, prelude::*, Result};
 macro_rules! ICR_DST {
     ($x:expr) => {
         ($x as u32) << 24
@@ -56,13 +56,17 @@ pub(crate) struct LapicReg {}
 
 pub(crate) struct RkvmLapicState {
     pub(crate) base_address: u64,
-    //pub(crate) lapic_timer: bindings::hrtimer,
+    pub(crate) lapic_timer: bindings::hrtimer,
     pub(crate) timer_dconfig: u32,
     pub(crate) timer_init: u32,
     pub(crate) interrupt_bitmap: Bitmap,
     //pub(crate) regs: LapicReg,
     /// The highest vector set in ISR; if -1 - invalid, must scan ISR.
     pub(crate) highest_isr_cache: u32,
+}
+
+extern "C" fn lapic_timer_callback(arg1: *mut bindings::hrtimer) -> bindings::hrtimer_restart {
+    bindings::hrtimer_restart_HRTIMER_NORESTART
 }
 
 impl RkvmLapicState {
@@ -73,13 +77,40 @@ impl RkvmLapicState {
             Err(err) => return Err(err),
         };
 
-        let lapic = Self {
+        let mut lapic = Self {
             base_address: base,
+            lapic_timer: bindings::hrtimer {
+                // init hrtimer
+                node: bindings::timerqueue_node {
+                    node: bindings::rb_node {
+                        __rb_parent_color: 0,
+                        rb_right: core::ptr::null_mut(),
+                        rb_left: core::ptr::null_mut(),
+                    },
+                    expires: 0,
+                },
+                _softexpires: 0,
+                function: None,
+                base: core::ptr::null_mut(),
+                state: 0,
+                is_rel: 0,
+                is_soft: 0,
+                is_hard: 0,
+            },
             timer_dconfig: 0,
-            timer_init:    0,
+            timer_init: 0,
             interrupt_bitmap: interrupt_bitmap,
             highest_isr_cache: 0,
         };
+
+        unsafe {
+            bindings::hrtimer_init(
+                &mut lapic.lapic_timer,
+                bindings::CLOCK_MONOTONIC.try_into().unwrap(),
+                bindings::hrtimer_mode_HRTIMER_MODE_ABS,
+            );
+            lapic.lapic_timer.function = Some(lapic_timer_callback);
+        }
         Ok(lapic)
     }
     pub(crate) fn lapicInterrupt(&mut self) -> Result<i32> {

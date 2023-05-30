@@ -6,7 +6,6 @@ use crate::mmu::*;
 use crate::vmcs::*;
 use crate::{rkvm_debug, DEBUG_ON};
 use core::arch::asm;
-use core::cmp::Ordering;
 use core::mem::MaybeUninit;
 use kernel::pages::Pages;
 use kernel::prelude::*;
