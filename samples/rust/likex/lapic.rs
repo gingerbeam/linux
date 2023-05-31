@@ -6,7 +6,7 @@ use crate::lapic_priv::X86InterruptVector::X86_INT_VIRT;
 use crate::lib::Bitmap;
 use crate::vmcs::*;
 use crate::x86reg::RFlags;
-use kernel::{bindings, prelude::*, Result};
+use kernel::{bindings, container_of, prelude::*, Result};
 macro_rules! ICR_DST {
     ($x:expr) => {
         ($x as u32) << 24
@@ -25,9 +25,9 @@ macro_rules! ICR_DST_SHORTHAND {
     };
 }
 
-static InterruptibilityStiBlocking: u32 = 1 << 0;
-static InterruptibilityMovSsBlocking: u32 = 1 << 1;
-static InterruptibilityNmiBlocking: u32 = 1 << 3;
+static INTERRUPTIBILITY_STI_BLOCKING: u32 = 1 << 0;
+static INTERRUPTIBILITY_MOV_SS_BLOCKING: u32 = 1 << 1;
+static INTERRUPTIBILITY_NMI_BLOCKING: u32 = 1 << 3;
 
 // ICR_DST_BROADCAST ICR_DST(0xff)
 // ICR_DST_SELF ICR_DST_SHORTHAND(1)
@@ -66,6 +66,7 @@ pub(crate) struct RkvmLapicState {
 }
 
 extern "C" fn lapic_timer_callback(arg1: *mut bindings::hrtimer) -> bindings::hrtimer_restart {
+    let lapic: &RkvmLapicState = unsafe {&*container_of!(arg1, RkvmLapicState, lapic_timer)};
     bindings::hrtimer_restart_HRTIMER_NORESTART
 }
 
@@ -125,11 +126,11 @@ impl RkvmLapicState {
         }
         // inject interrupt
         let can_inj_nmi = vmcs_read32(VmcsField::GUEST_INTERRUPTIBILITY_INFO)
-            & (InterruptibilityNmiBlocking | InterruptibilityMovSsBlocking)
+            & (INTERRUPTIBILITY_NMI_BLOCKING | INTERRUPTIBILITY_MOV_SS_BLOCKING)
             == 0;
         let can_inj_int = (vmcs_read64(VmcsField::GUEST_RFLAGS) & RFlags::FLAGS_IF as u64 != 0)
             && (vmcs_read32(VmcsField::GUEST_INTERRUPTIBILITY_INFO)
-                & (InterruptibilityStiBlocking | InterruptibilityMovSsBlocking))
+                & (INTERRUPTIBILITY_STI_BLOCKING | INTERRUPTIBILITY_MOV_SS_BLOCKING))
                 == 0;
         if vector > X86_INT_VIRT as u8 && vector < X86_INT_PLATFORM_BASE as u8 {
             pr_err!("Invalid interrupt vector: {}\n", vector);

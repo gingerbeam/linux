@@ -566,7 +566,7 @@ fn get_inst_info(guest_rip: u64, gpa: u64, inst_len: u32, vcpu: &VcpuWrapper) ->
             ptr,
             offset.try_into().unwrap(),
             inst_len.try_into().unwrap(),
-        );
+        )?;
         (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).exit_reason =
             RkvmUserExitReason::RKVM_EXIT_MMIO as u32;
         (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).mmio.inst_len = inst_len as u16;

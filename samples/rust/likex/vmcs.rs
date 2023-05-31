@@ -511,12 +511,12 @@ fn set_control(field: VmcsField, true_msr: u64, old_msr: u64, set: u32, clear: u
 }
 
 // interrupt func
-static InterruptInfoValid: u32 = 1 << 31;
-static InterruptInfoDeliverErrorCode: u32 = 1 << 11;
-static InterruptTypeNmi: u32 = 2 << 8;
-static InterruptTypeHardwareException: u32 = 3 << 8;
-static InterruptTypeSoftwareException: u32 = 6 << 8;
-static BaseProcessorVpid: u16 = 1;
+static INTERRUPT_INFO_VALID: u32 = 1 << 31;
+static INTERRUPT_INFO_DELIVER_ERROR_CODE: u32 = 1 << 11;
+static INTERRUPT_TYPE_NMI: u32 = 2 << 8;
+static INTERRUPT_TYPE_HARDWARE_EXCEPTION: u32 = 3 << 8;
+static INTERRUPT_TYPE_SOFTWARE_EXCEPTION: u32 = 6 << 8;
+static BASE_PROCESSOR_VPID: u16 = 1;
 
 pub(crate) fn interrupt_window_exiting(val: bool) {
     let mut controls: u32 = vmcs_read32(VmcsField::CPU_BASED_VM_EXEC_CONTROL);
@@ -558,21 +558,21 @@ fn has_error_code(vector: u8) -> bool {
 }
 
 pub(crate) fn issue_interrupt(vector: u8) {
-    let mut interrupt_info: u32 = InterruptInfoValid | (vector & 0xff) as u32;
+    let mut interrupt_info: u32 = INTERRUPT_INFO_VALID | (vector & 0xff) as u32;
     if vector == X86InterruptVector::X86_INT_BREAKPOINT as u8
         || vector == X86InterruptVector::X86_INT_OVERFLOW as u8
     {
         // A VMM should use type hardware exception for all exceptions other than
         // breakpoints and overflows, which should be software exceptions.
-        interrupt_info |= InterruptTypeSoftwareException;
+        interrupt_info |= INTERRUPT_TYPE_SOFTWARE_EXCEPTION;
     } else if vector == X86InterruptVector::X86_INT_NMI as u8 {
-        interrupt_info |= InterruptTypeNmi;
+        interrupt_info |= INTERRUPT_TYPE_NMI;
     } else if vector <= X86InterruptVector::X86_INT_VIRT as u8 {
         // All other vectors from 0 to X86_INT_VIRT are exceptions.
-        interrupt_info |= InterruptTypeHardwareException;
+        interrupt_info |= INTERRUPT_TYPE_HARDWARE_EXCEPTION;
     }
     if has_error_code(vector) {
-        interrupt_info |= InterruptInfoDeliverErrorCode;
+        interrupt_info |= INTERRUPT_INFO_DELIVER_ERROR_CODE;
         vmcs_write(VmcsField::VM_ENTRY_EXCEPTION_ERROR_CODE, 0);
     }
  
