@@ -174,6 +174,9 @@ pub mod virt {
      }
 
      /// Return mm_struct
+     ///
+     /// # Safety
+     ///
      pub unsafe fn get(&self) -> *mut bindings::mm_struct {
          self.0.get()
      }

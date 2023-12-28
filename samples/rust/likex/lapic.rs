@@ -52,15 +52,13 @@ macro_rules! LAPIC_REG_IRQ_REQUEST {
     };
 }
 
-pub(crate) struct LapicReg {}
-
 pub(crate) struct RkvmLapicState {
     pub(crate) base_address: u64,
     pub(crate) lapic_timer: bindings::hrtimer,
+    /// just realize periodic timer
     pub(crate) timer_dconfig: u32,
     pub(crate) timer_init: u32,
     pub(crate) interrupt_bitmap: Bitmap,
-    //pub(crate) regs: LapicReg,
     /// The highest vector set in ISR; if -1 - invalid, must scan ISR.
     pub(crate) highest_isr_cache: u32,
 }
@@ -113,7 +111,7 @@ impl RkvmLapicState {
     pub(crate) fn lapicInterrupt(&mut self) -> Result<i32> {
         let vector: u8;
         let active = self.interrupt_bitmap.get(X86_INT_NMI as usize);
-        if active == false {
+        if !active {
             vector = X86_INT_NMI as u8;
         } else {
             // get normal interrupt vector
@@ -152,6 +150,6 @@ impl RkvmLapicState {
         self.interrupt_bitmap.clear_range(0, X86_INT_NMI as usize);
         self.interrupt_bitmap
             .clear_range(X86_INT_NMI as usize + 1, X86_INT_VIRT as usize + 1);
-        return Ok(0);
+        Ok(0)
     }
 }

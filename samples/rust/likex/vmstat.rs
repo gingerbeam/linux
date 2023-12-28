@@ -98,16 +98,16 @@ impl GuestState {
     }
     // Convenience getters for accessing low 32-bits of common registers.
     pub(crate) fn get_eax(&self) -> u32 {
-        return self.rax as u32;
+        self.rax as u32
     }
     pub(crate) fn get_ecx(&self) -> u32 {
-        return self.rcx as u32;
+        self.rcx as u32
     }
     pub(crate) fn get_edx(&self) -> u32 {
-        return self.rdx as u32;
+        self.rdx as u32
     }
     pub(crate) fn get_ebx(&self) -> u32 {
-        return self.rbx as u32;
+        self.rbx as u32
     }
 
     // Convenience getter/setter for fetching the 64-bit value edx:eax, used by
@@ -119,7 +119,7 @@ impl GuestState {
     // RDMSR).
 
     pub(crate) fn get_edx_eax(&self) -> u64 {
-        return (self.get_edx() as u64) << 32 | (self.get_eax() as u64);
+        (self.get_edx() as u64) << 32 | (self.get_eax() as u64)
     }
     pub(crate) fn set_edx_eax(&mut self, value: u64) {
         self.rax = BITS_SHIFT!(value, 31, 0);

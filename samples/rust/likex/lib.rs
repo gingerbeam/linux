@@ -59,7 +59,7 @@ impl Bitmap {
                 }
             }
         }
-        return 0xff;
+        0xff
     }
 }
 

@@ -63,7 +63,7 @@ pub(crate) fn read_cr0() -> u64 {
             out(reg) val
         );
     }
-    return val;
+    val
 }
 
 pub(crate) fn read_cr2() -> u64 {
@@ -73,7 +73,7 @@ pub(crate) fn read_cr2() -> u64 {
             out(reg) val
         );
     }
-    return val;
+    val
 }
 
 pub(crate) fn read_cr3() -> u64 {
@@ -83,7 +83,7 @@ pub(crate) fn read_cr3() -> u64 {
             out(reg) val
         );
     }
-    return val;
+    val
 }
 
 pub(crate) fn read_cr4() -> u64 {
@@ -93,7 +93,7 @@ pub(crate) fn read_cr4() -> u64 {
             out(reg) val
         );
     }
-    return val;
+    val
 }
 
 pub(crate) fn write_cr4(val: u64) {
@@ -122,5 +122,5 @@ pub(crate) fn read_fsbase() -> u64 {
             out(reg) fsbase
         );
     }
-    return fsbase;
+    fsbase
 }

@@ -168,10 +168,10 @@ impl RkvmMmu {
             root_mmu_page: root.clone(),
             mmu_root_list: List::new(),
             mmu_pages_list: List::new(),
-            spte_flags: flags.clone(),
+            spte_flags: flags,
         })?;
 
-        let root = Arc::from(root);
+        let root = root; //Arc::from(root);
         Arc::into_raw(root.clone());
 
         unsafe { mmu.mmu_root_list.push_back(&*root) };

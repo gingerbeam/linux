@@ -392,14 +392,13 @@ impl file::IoctlHandler for RkvmState {
                     reader.read_raw(ptr.as_mut_ptr(), len)?;
                 }
 
-                let ret = guest.add_memory_region(
+                guest.add_memory_region(
                     uaddr_.slot as u16,
                     uaddr_.userspace_addr,
                     uaddr_.memory_size >> 12,
                     uaddr_.guest_phys_addr,
                     uaddr_.flags,
-                );
-                ret
+                )
             }
             IOCTL_KVM_SET_REGS => {
                 rkvm_debug!("Rust kvm: IOCTL_KVM_SET_REGS \n");

@@ -339,42 +339,41 @@ fn vmcs_write(field: VmcsField, value: u64) -> Result {
 
 pub(crate) fn vmcs_write32(field: VmcsField, value: u32) {
     match vmcs_write(field, value as u64) {
-        Ok(()) => return,
+        Ok(()) => (),
         Err(_) => {
             pr_err!(
                 " vmcs write error: field={:?}, value = {:x} \n",
                 field,
                 value
             );
-            return;
         }
     }
 }
 
 pub(crate) fn vmcs_write64(field: VmcsField, value: u64) {
     match vmcs_write(field, value as u64) {
-        Ok(()) => return,
+        Ok(()) => (),
         Err(_) => {
             pr_err!(
                 " vmcs write error: field={:?}, value = {:x} \n",
                 field,
                 value
             );
-            return;
+
         }
     }
 }
 
 pub(crate) fn vmcs_write16(field: VmcsField, value: u16) {
     match vmcs_write(field, value as u64) {
-        Ok(()) => return,
+        Ok(()) => (),
         Err(_) => {
             pr_err!(
                 " vmcs write error: field={:?}, value = {:x} \n",
                 field,
                 value
             );
-            return;
+
         }
     }
 }
@@ -386,37 +385,37 @@ fn vmcs_read(field: VmcsField) -> Result<u64> {
         asm!("vmread {0}, {1};", in(reg) field, out(reg) value, options(att_syntax));
     }
     match vmcs_status() {
-        Ok(()) => return Ok(value),
-        Err(e) => return Err(e),
+        Ok(()) => Ok(value),
+        Err(e) => Err(e),
     }
 }
 
 pub(crate) fn vmcs_read32(field: VmcsField) -> u32 {
     match vmcs_read(field) {
-        Ok(val) => return val as u32,
+        Ok(val) => val as u32,
         Err(_) => {
             pr_err!(" vmcs read error: field={:?} \n", field);
-            return 0;
+            0
         }
     }
 }
 
 pub(crate) fn vmcs_read64(field: VmcsField) -> u64 {
     match vmcs_read(field) {
-        Ok(val) => return val,
+        Ok(val) => val,
         Err(_) => {
             pr_err!(" vmcs read error: field={:?} \n", field);
-            return 0;
+            0
         }
     }
 }
 
 pub(crate) fn vmcs_read16(field: VmcsField) -> u16 {
     match vmcs_read(field) {
-        Ok(val) => return val as u16,
+        Ok(val) => val as u16,
         Err(_) => {
             pr_err!(" vmcs read error: field={:?} \n", field);
-            return 0;
+            0
         }
     }
 }
@@ -531,28 +530,28 @@ pub(crate) fn interrupt_window_exiting(val: bool) {
 fn has_error_code(vector: u8) -> bool {
     match X86InterruptVector::from(vector) {
         X86InterruptVector::X86_INT_DOUBLE_FAULT => {
-            return true;
+            true
         }
         X86InterruptVector::X86_INT_INVALID_TSS => {
-            return true;
+            true
         }
         X86InterruptVector::X86_INT_SEGMENT_NOT_PRESENT => {
-            return true;
+            true
         }
         X86InterruptVector::X86_INT_STACK_FAULT => {
-            return true;
+            true
         }
         X86InterruptVector::X86_INT_GP_FAULT => {
-            return true;
+            true
         }
         X86InterruptVector::X86_INT_PAGE_FAULT => {
-            return true;
+            true
         }
         X86InterruptVector::X86_INT_ALIGNMENT_CHECK => {
-            return true;
+            true
         }
         _ => {
-            return false;
+            false
         }
     }
 }

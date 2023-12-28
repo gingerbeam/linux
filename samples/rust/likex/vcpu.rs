@@ -315,12 +315,12 @@ impl VcpuWrapper {
                 let intr_info = vmcs_read32(VmcsField::IDT_VECTORING_INFO);
                 rkvm_debug!(" interrupt: {:x} \n", intr_info);
 
-                return Ok(1);
+                Ok(1)
             }
-            ExitReason::CPUID => return handle_cpuid(&exit_info, self),
-            ExitReason::HLT => return handle_hlt(&exit_info, self),
-            ExitReason::IO_INSTRUCTION => return handle_io(&exit_info, self),
-            ExitReason::EPT_VIOLATION => return handle_ept_violation(&exit_info, self),
+            ExitReason::CPUID => handle_cpuid(&exit_info, self),
+            ExitReason::HLT => handle_hlt(&exit_info, self),
+            ExitReason::IO_INSTRUCTION => handle_io(&exit_info, self),
+            ExitReason::EPT_VIOLATION => handle_ept_violation(&exit_info, self),
             ExitReason::EPT_MISCONFIGURATION => {
                 let vector_info = vmcs_read32(VmcsField::IDT_VECTORING_INFO);
                 if vector_info & 0x80000000 != 0 {
@@ -339,7 +339,7 @@ impl VcpuWrapper {
                     " EPT_MISCONFIGURATION is invalid, vector_info: {:x} \n",
                     vector_info
                 );
-                return Err(EINVAL);
+                Err(EINVAL)
             }
             _ => {
                 pr_err!(" vmx exit_reason = {:?} \n", exit_info.exit_reason);
@@ -348,9 +348,9 @@ impl VcpuWrapper {
                     (*(vcpuinner.run.as_mut_ptr::<RkvmRun>())).exit_reason =
                         (RkvmUserExitReason::RKVM_EXIT_INTERNAL_ERROR) as u32;
                 }
-                return Err(EINVAL);
+                Err(EINVAL)
             }
-        };
+        }
     }
 
     pub(crate) fn vcpu_run(&self) -> i64 {

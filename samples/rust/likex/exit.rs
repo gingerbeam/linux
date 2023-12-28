@@ -673,9 +673,9 @@ pub(crate) fn handle_cpuid(exit_info: &ExitInfo, vcpu: &VcpuWrapper) -> Result<u
 
 fn handle_apic_wrmsr(exit_info: &ExitInfo, vcpu: &VcpuWrapper) -> Result<u64> {
     let mut vcpuinner = vcpu.vcpuinner.lock();
-    let eax = (vcpuinner.guest_state.rax & 0xffffffff as u64) as u32;
-    let ecx = (vcpuinner.guest_state.rcx & 0xffffffff as u64) as u32;
-    let edx = (vcpuinner.guest_state.rdx & 0xffffffff as u64) as u32;
+    let eax = (vcpuinner.guest_state.rax & 0xffffffff_u64) as u32;
+    let ecx = (vcpuinner.guest_state.rcx & 0xffffffff_u64) as u32;
+    let edx = (vcpuinner.guest_state.rdx & 0xffffffff_u64) as u32;
     match X2apicMsr::from(ecx) {
         X2apicMsr::SELF_IPI => {}
         X2apicMsr::INITIAL_COUNT => {}
@@ -696,12 +696,12 @@ pub(crate) fn handle_wrmsr(exit_info: &ExitInfo, vcpu: &VcpuWrapper) -> Result<u
     match cmd {
         /* X2ApicMsrBase..=X2ApicMsrMax */
         0x800..=0x83f => {
-            return handle_apic_wrmsr(exit_info, vcpu);
+            handle_apic_wrmsr(exit_info, vcpu)
         }
         /*X86MsrIA32Cstar */
         0xc0000083 => {
             exit_info.next_rip();
-            return Ok(0);
+            Ok(0)
         }
         _ => Ok(0),
     }
