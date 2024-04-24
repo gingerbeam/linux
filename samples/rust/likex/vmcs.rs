@@ -574,7 +574,7 @@ pub(crate) fn issue_interrupt(vector: u8) {
         interrupt_info |= INTERRUPT_INFO_DELIVER_ERROR_CODE;
         vmcs_write(VmcsField::VM_ENTRY_EXCEPTION_ERROR_CODE, 0);
     }
- 
+    pr_info!(" issue_interrupt: vector={:?}, interrupt_info={:?} \n", vector, interrupt_info); 
     vmcs_write32(VmcsField::VM_ENTRY_INTR_INFO_FIELD, interrupt_info);
 }
 

@@ -111,7 +111,7 @@ impl RkvmLapicState {
     pub(crate) fn lapicInterrupt(&mut self) -> Result<i32> {
         let vector: u8;
         let active = self.interrupt_bitmap.get(X86_INT_NMI as usize);
-        if !active {
+        if active {
             vector = X86_INT_NMI as u8;
         } else {
             // get normal interrupt vector

@@ -375,7 +375,7 @@ impl VcpuWrapper {
                 let launched = vcpuinner.guest_state.launched;
 
                 // handle interrupt inject
-                //vcpuinner.lapic.lapicInterrupt();
+                vcpuinner.lapic.lapicInterrupt();
                 rkvm_debug!(
                     " vmentry: launched = {:?}, guest_rip={:x} \n",
                     launched,
