@@ -99,7 +99,7 @@ impl GuestWrapper {
     pub(crate) fn find_slot(&self, gfn: u64) -> Result<Arc<RkvmMemorySlot>> {
         let guestinner = self.guestinner.lock();
         for (_i, e) in guestinner.slots_list.iter().enumerate() {
-            if (gfn >= e.base_gfn) && (gfn <= e.base_gfn + PAGE_SIZE as u64 * e.npages) {
+            if (gfn >= e.base_gfn) && (gfn < e.base_gfn + e.npages) {
                 let slot = unsafe { Arc::<RkvmMemorySlot>::from_raw(e) };
                 return Ok(slot);
             }

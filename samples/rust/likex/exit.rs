@@ -382,7 +382,7 @@ fn rkvm_pagefault(vcpu: &VcpuWrapper, fault: &mut RkvmPageFault) -> Result<u32> 
         fault.goal_level = 1;
     }
 
-    rkvm_debug!("pagefault: pfn={:?} \n", fault.pfn);
+    rkvm_debug!("pagefault: pfn={:?}, level={:?} \n", fault.pfn, fault.goal_level);
 
     Ok(0)
 }

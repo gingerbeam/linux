@@ -158,7 +158,6 @@ impl kernel::Module for RustMiscdev {
 
 impl Drop for RustMiscdev {
     fn drop(&mut self) {
-        //unsafe { bindings::rkvm_vmxoff();}
         pr_info!("Rust kvm module (exit)\n");
     }
 }
