@@ -5855,8 +5855,9 @@ void ptlock_free(struct page *page)
 /*rkvm */
 unsigned long rkvm_get_current_gdt_ro(void)
 {
+		unsigned long ret;
         get_cpu();
-        unsigned long ret = (unsigned long)get_cpu_gdt_ro(smp_processor_id());
+        ret = (unsigned long)get_cpu_gdt_ro(smp_processor_id());
         put_cpu();
         return ret;
 }
@@ -5864,9 +5865,9 @@ EXPORT_SYMBOL_GPL(rkvm_get_current_gdt_ro);
 
 unsigned long rkvm_get_current_tss_ro(void)
 {
-       get_cpu();
-       unsigned long ret =
-		(unsigned long)&get_cpu_entry_area(smp_processor_id())->tss.x86_tss;
+       unsigned long ret;
+	   get_cpu();
+       ret = (unsigned long)&get_cpu_entry_area(smp_processor_id())->tss.x86_tss;
        put_cpu();
        return ret;
 }
