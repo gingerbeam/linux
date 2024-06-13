@@ -52,42 +52,37 @@ macro_rules! LAPIC_REG_IRQ_REQUEST {
     };
 }
 
-// LAPIC_TIMER: struct
-pub(crate) struct LapicTimer {
-    pub(crate) timer: bindings::hrtimer,
-    // pub(crate) timer_dconfig: u32
-    // pub(crate) timer_init: u32,
-    pub(crate) period: i64,
-    pub(crate) target_expiration: bindings::ktime_t,
-    pub(crate) tscdeadline: u64,
-    pub(crate) expired_tscdeadline: u64,
-    pub(crate) timer_advance_ns: u64,
-    // atomic_t pending here
-    pub(crate) hv_timer_in_use: bool,
-}
-
 pub(crate) struct RkvmLapicState {
     pub(crate) base_address: u64,
     pub(crate) lapic_timer: bindings::hrtimer,
     /// just realize periodic timer
     pub(crate) timer_dconfig: u32,
     pub(crate) timer_init: u32,
+    // lapic timer regs
+    pub(crate) period: i64,
+    // ktime_t target_expiration,
+    pub(crate) timer_mode: u32,
+    // u32 timer_mode_mask,
+    pub(crate) tscdeadline: u64,
+    pub(crate) expired_tscdeadline: u64,
+    pub(crate) timer_advance_ns: u32,
+    pub(crate) pending: i32,
+    pub(crate) hv_timer_in_use: bool,
+    // lapic timer regs
     pub(crate) interrupt_bitmap: Bitmap,
     /// The highest vector set in ISR; if -1 - invalid, must scan ISR.
     pub(crate) highest_isr_cache: u32,
-    // LAPIC_TIMER: try to add a LapicTimer struct
-    pub(crate) test_ltimer: LapicTimer,
 }
 
-// apic timer fn
-// 获取hrtimer所在结构和kvm_timer所在结构 -> apic
-// apic_timer_expired(apic, true); 从timer_fn，apic_timer到期
-// lapic is periodic =>
-//     advance periodic target expiration(apic)
-//     hrtimer add expires nx (ktimer->timer, ktimer->period)
-// else => HRTIMER_NORESTART
+pub fn apic_timer_expired(apic: &mut RkvmLapicState, from_timer_fn: bool) -> ! {
+    // wake up vcpu
+}
+
+// hrtimer callback function
 extern "C" fn lapic_timer_callback(arg1: *mut bindings::hrtimer) -> bindings::hrtimer_restart {
-    let lapic: &RkvmLapicState = unsafe {&*container_of!(arg1, RkvmLapicState, lapic_timer)};
+    let lapic: & mut RkvmLapicState = unsafe {&*container_of!(arg1, RkvmLapicState, lapic_timer)};
+    // all logic for call back function
+    apic_timer_expired(lapic, true);
     bindings::hrtimer_restart_HRTIMER_NORESTART
 }
 
@@ -119,29 +114,9 @@ impl RkvmLapicState {
             timer_init: 0,
             interrupt_bitmap: interrupt_bitmap,
             highest_isr_cache: 0,
-            // LAPIC_TIMER: init a timer for LapicTimer
-            test_ltimer: LapicTimer {
-                timer: bindings::hrtimer {
-                    // init hrtimer
-                    node: bindings::timerqueue_node {
-                        node: bindings::rb_node {
-                            __rb_parent_color: 0,
-                            rb_right: core::ptr::null_mut(),
-                            rb_left: core::ptr::null_mut(),
-                        },
-                        expires: 0,
-                    },
-                    _softexpires: 0,
-                    function: None,
-                    base: core::ptr::null_mut(),
-                    state: 0,
-                    is_rel: 0,
-                    is_soft: 0,
-                    is_hard: 0,
-                },
-            },
         };
 
+        // create lapic timer
         unsafe {
             bindings::hrtimer_init(
                 &mut lapic.lapic_timer,
@@ -151,15 +126,6 @@ impl RkvmLapicState {
             lapic.lapic_timer.function = Some(lapic_timer_callback);
         }
 
-        // LAPIC_TIMER: init timer
-        unsafe {
-            bindings::hrtimer_init(
-                &mut lapic.test_ltimer.timer,
-                bindings::CLOCK_MONOTONIC.try_into().unwrap(),
-                bindings::hrtimer_mode_HRTIMER_MODE_ABS,
-            );
-            lapic.lapic_timer.function = Some(lapic_timer_callback);
-        }
         Ok(lapic)
     }
     pub(crate) fn lapicInterrupt(&mut self) -> Result<i32> {
@@ -207,3 +173,12 @@ impl RkvmLapicState {
         Ok(0)
     }
 }
+
+/*
+    create_lapic
+    set_lapic_tscdeadline_msr (trigger start_apic_timer) -> start_apic_timer
+        -> clear pending -> restart_apictimer
+            -> preempt disabled -> check if pending -> start_hv_timer
+                -> set_hv_timer (tscdeadline) -> cancel hrtimer -> cancel hv timer -> expired -> ...
+            -> preempt enabled
+*/
