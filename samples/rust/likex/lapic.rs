@@ -61,12 +61,13 @@ pub(crate) struct RkvmLapicState {
     // lapic timer regs
     pub(crate) period: i64,
     // ktime_t target_expiration,
-    pub(crate) timer_mode: u32,
+    // pub(crate) timer_mode: u32,
     // u32 timer_mode_mask,
     pub(crate) tscdeadline: u64,
     pub(crate) expired_tscdeadline: u64,
     pub(crate) timer_advance_ns: u32,
-    pub(crate) pending: i32,
+    // pub(crate) pending: i32,
+    pub(crate) pending: bindings::atomic_t,
     pub(crate) hv_timer_in_use: bool,
     // lapic timer regs
     pub(crate) interrupt_bitmap: Bitmap,
@@ -74,15 +75,10 @@ pub(crate) struct RkvmLapicState {
     pub(crate) highest_isr_cache: u32,
 }
 
-pub fn apic_timer_expired(apic: &mut RkvmLapicState, from_timer_fn: bool) -> ! {
-    // wake up vcpu
-}
-
 // hrtimer callback function
 extern "C" fn lapic_timer_callback(arg1: *mut bindings::hrtimer) -> bindings::hrtimer_restart {
     let lapic: & mut RkvmLapicState = unsafe {&*container_of!(arg1, RkvmLapicState, lapic_timer)};
-    // all logic for call back function
-    apic_timer_expired(lapic, true);
+    lapic.lapic_timer_expired(true);
     bindings::hrtimer_restart_HRTIMER_NORESTART
 }
 
@@ -112,6 +108,20 @@ impl RkvmLapicState {
             },
             timer_dconfig: 0,
             timer_init: 0,
+            // lapic timer regs
+            period: 0,
+            // ktime_t target_expiration,
+            // timer_mode: 0,
+            // u32 timer_mode_mask,
+            tscdeadline: 0,
+            expired_tscdeadline: 0,
+            timer_advance_ns: 0,
+            pending: bindings::atomic_t {
+                counter: 0,
+            },
+            // pending: 0,
+            hv_timer_in_use: false,
+            // lapic timer regs
             interrupt_bitmap: interrupt_bitmap,
             highest_isr_cache: 0,
         };
@@ -182,3 +192,89 @@ impl RkvmLapicState {
                 -> set_hv_timer (tscdeadline) -> cancel hrtimer -> cancel hv timer -> expired -> ...
             -> preempt enabled
 */
+
+impl RkvmLapicState {
+    // unfinished
+    pub(crate) fn lapic_timer_expired(&mut self, from_timer_fn: bool) -> ! {
+        let vcpu: & mut Vcpu = unsafe {
+            &*container_of!(self, Vcpu, lapic)
+        };
+        let mut vcpuinner = vcpu.vcpuinner.lock();
+
+        if bindings::atomic_read(self.pending) { // self.pending > 0
+            return;
+        }
+
+        self.expired_tscdeadline = self.tscdeadline;
+
+        // call from hv_timer
+        if !from_timer_fn {
+            // inject
+            return ;
+        }
+
+        // add pending
+        bindings::atomic_inc(self.pending);
+        // wake up vcpu
+        if from_timer_fn {
+            // vcpu.run
+        }
+    }
+
+    pub(crate) fn start_apic_timer(&mut self) -> ! {
+        self.pending = 0; // clear pending
+        self.restart_apic_timer();
+    }
+
+    pub(crate) fn restart_apic_timer(&mut self) {
+        bindings::preempt_disable();
+        // if there is pending, out
+        if bindings::atomic_read(self.pending) { // self.pending > 0
+            // preempt_enable
+            bindings::preempt_enable();
+            return;
+        }
+        self.start_hv_timer();
+        bindings::preempt_enable();
+    }
+
+    // preemption timer
+    pub(crate) fn start_hv_timer(&mut self) {
+        let vcpu: & mut Vcpu = unsafe {
+            &*container_of!(self, Vcpu, lapic)
+        };
+        let mut vcpuinner = vcpu.vcpuinner.lock();
+
+        let mut expired: bool = false;
+
+        // check if hv_timer available
+        // set vmx: vmx->hv_deadline_tsc = tscl + delta_tsc
+        // return if expires (set)
+        if vcpu.vmx_set_hv_timer(self.tscdeadline) {
+            return;
+        }
+
+        let self.hv_timer_in_use = true;
+        hrtimer_cancel(self.lapic_timer);
+
+        // tscdeadline mode
+        // if pending exists
+        if bindings::atomic_read(self.pending) { // self.pending > 0 
+            self.cancel_hv_timer();
+        } else if expired {
+            // no pending and expired
+            lapic_timer_expired(false);
+            self.cancel_hv_timer();
+        }
+
+        // trace_kvm_hv_timer_state(vcpu->vcpu_id, ktimer->hv_timer_in_use);
+    }
+
+    pub(crate) fn cancel_hv_timer(&mut self) {
+        // call vmx_cancel_hv_timer
+        // set hv_deadline_tsc to -1
+        // vmx = container_of(vcpu)
+        // to_vmx(vcpu)->hv_deadline_tsc = -1;
+        self.hv_timer_in_use = false;
+    }
+}
