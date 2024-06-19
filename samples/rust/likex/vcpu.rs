@@ -207,6 +207,19 @@ pub(crate) fn rkvm_irq_enable() {
 }
 
 #[allow(dead_code)]
+pub(crate) struct Vcpu_vmx {
+    pub(crate) hv_deadline: u64,
+}
+
+impl Vcpu_vmx {
+    pub(crate) fn new(data: u64) -> Result<Self> {
+        Ok(Vcpu_vmx {
+            hv_deadline: data,
+        })
+    }
+}
+
+#[allow(dead_code)]
 pub(crate) struct Vcpu {
     pub(crate) guest: Arc<GuestWrapper>,
     pub(crate) guest_state: Pin<Box<GuestState>>,
@@ -218,6 +231,8 @@ pub(crate) struct Vcpu {
     pub(crate) vmcs: RkvmPage,
     pub(crate) vcpu_id: u32,
     pub(crate) launched: bool,
+    // vmx related
+    pub(crate) vcpu_vmx: Vcpu_vmx,
 }
 
 pub(crate) fn alloc_vmcs(revision_id: u32) -> Result<RkvmPage> {
@@ -284,6 +299,7 @@ impl VcpuWrapper {
                     vmcs: vmcs,
                     vcpu_id: 0,
                     launched: false,
+                    vcpu_vmx: Vcpu_vmx::new(0).unwrap(),
                 })
             },
         })?);
@@ -512,6 +528,66 @@ impl VcpuWrapper {
         vmcs_load(vcpuinner.vmcs.va);
         sregs.cs.base = vmcs_read64(VmcsField::GUEST_CS_BASE);
         sregs.cs.selector = vmcs_read16(VmcsField::GUEST_CS_SELECTOR);
+    }
+}
+
+impl VcpuWrapper {
+    pub(crate) fn Rkvm_set_tscdeadline_msr(&self, data: u64) {
+        let mut vcpuinner = self.vcpuinner.lock();
+        // apic is active and tscdeadline mode is on by default
+        bindings::hrtimer_cancel(&vcpuinner.lapic.lapic_timer);
+        vcpuinner.lapic.tscdeadline = data;
+        vcpuinner.lapic.start_apic_timer();
+    }
+
+    pub(crate) fn read_time_stamp_counter() -> u64 {
+        let mut low: u32;
+        let mut high: u32;
+    
+        unsafe {
+            asm!(
+                "rdtsc",
+                out("eax") low,
+                out("edx") high,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    
+        (low as u64) | ((high as u64) << 32)
+    }
+
+    // unfinished
+    pub(crate) fn vmx_set_hv_timer (&self, guest_deadline_tsc: u64) -> bool {
+        let mut vcpuinner = self.vcpuinner.lock();
+        let mut vmx  = vcpuinner.vcpu_vmx;
+
+        // read current tsc value
+        let tscl: u64 = read_time_stamp_counter();
+        let guest_tscl: u64 = 0; // virtualized guest tsc
+        let mut delta_tsc: u64;
+        if guest_deadline_tsc > guest_tscl {
+            delta_tsc = guest_deadline_tsc - tscl;
+        } else {
+            delta_tsc = guest_tscl - tscl;
+        }
+
+        let mut lapic_timer_advance_cycles: u64 = 0; // nsec_to_cycles(vcpu, ktimer->timer_advance_ns);
+
+        if delta_tsc > lapic_timer_advance_cycles {
+            delta_tsc -= lapic_timer_advance_cycles;
+        } else {
+            delta_tsc = 0;
+        }
+
+        // tsc scaling
+
+        // make sure
+
+        // store tsc deadline time
+        vmx.hv_deadline = tscl + delta_tsc;
+
+        // if delta == 0, timer expires, send true
+        !delta_tsc
     }
 }
 
